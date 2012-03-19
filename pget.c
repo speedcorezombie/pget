@@ -20,6 +20,8 @@ int main() {
 	const u_char* packet;		 // The actual packet
 	struct iphdr* ipheader = NULL;   // Pointer to the IP header
 	struct tcphdr* tcpheader = NULL; // Pointer to the TCP header
+	int iphdr_size, packet_size, tcphdr_size;
+	iphdr_size = packet_size = tcphdr_size = 0;
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 	memset(httpbuf, 0, 512);
@@ -56,11 +58,15 @@ int main() {
 		
 		// Extract IP header
 		ipheader = (struct iphdr *)(packet + 14);
-		printf("IP header lengh:  %d\n", ipheader->ihl);
+		iphdr_size = ipheader->ihl * 4;
+		packet_size = ntohs(ipheader->tot_len);
+		printf("IP header lengh:  %d\n", iphdr_size);
+		printf("Packet size:  %d\n", packet_size);
                 printf("Source IP:        %s\n", inet_ntoa( *(struct in_addr *) &ipheader->saddr));
                 printf("Destination IP:   %s\n", inet_ntoa( *(struct in_addr *) &ipheader->daddr));
 		// Extract TCP header
-                tcpheader = (struct tcphdr *)(packet + 14 + ipheader->ihl * 4);
+                tcpheader = (struct tcphdr *)(packet + 14 + iphdr_size);
+		tcphdr_size = tcpheader->doff * 4;
 		printf("Source port:      %d\n", ntohs(tcpheader->source));
 		printf("Destination port: %d\n", ntohs(tcpheader->dest));
 		printf("Flags:            ");
@@ -71,7 +77,7 @@ int main() {
 		if (tcpheader->fin)
                         printf("FYN ");
 		printf("\n");
-		memcpy(httpbuf, packet + 14 + ipheader->ihl * 4 + tcpheader->doff * 4, 512);		
+		memcpy(httpbuf, packet + 14 + iphdr_size + tcphdr_size, packet_size - (iphdr_size + tcphdr_size));
 		printf("%s\n", httpbuf);
         	memset(httpbuf, 0, 512);
 		printf("\n");
