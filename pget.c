@@ -6,7 +6,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-#define MAX_HTTP_SIZE 2048 		 // Max http packet size
+#define MAX_HTTP_SIZE 2048 		 // Max allowed HTTP packet size
+#define MAX_FIELD_SIZE 2048               // Max allowed field size in HTTP header
 #define ETH_HDR_SIZE 14			 // Ethernet header size
 
 int main() {
@@ -14,6 +15,7 @@ int main() {
 	char* device;                    // Sniffing device
 	char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
 	char httpbuf[MAX_HTTP_SIZE];     // HTTP packet buffer
+	char buf[MAX_FIELD_SIZE];        // Buffer for extract HTTP headers
 	pcap_t* handle;                  // Session handle
 	struct bpf_program fp;           // The compiled filter expression
 	char filter_exp[] = "port 80";   // The filter expression
@@ -40,12 +42,12 @@ int main() {
 	}
 
 	handle = pcap_open_live(device, 2048, 0, 512, errbuf);
-
+	// Compile filter for capture
 	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
 		fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
 		exit(1);
 	}
-
+	// Apply compiled filter
 	if (pcap_setfilter(handle, &fp) == -1) {
 		fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
 		exit(1);
@@ -64,7 +66,7 @@ int main() {
 		iphdr_size = ipheader->ihl * 4;
 		packet_size = ntohs(ipheader->tot_len);
 		printf("IP header lengh:  %d\n", iphdr_size);
-		printf("Packet size:  %d\n", packet_size);
+		printf("Packet size:      %d\n", packet_size);
                 printf("Source IP:        %s\n", inet_ntoa( *(struct in_addr *) &ipheader->saddr));
                 printf("Destination IP:   %s\n", inet_ntoa( *(struct in_addr *) &ipheader->daddr));
 		// Extract TCP header
@@ -83,19 +85,24 @@ int main() {
 
 		// Calculate HTTP packet's size 
 		htpkt_size = packet_size - (iphdr_size + tcphdr_size);
-		printf("htpkt_size = %d\n", htpkt_size);
+		printf("HTTP packet size: %d\n", htpkt_size);
 
 		// Truncate it, if exceed MAX_HTTP_SIZE
 		if (htpkt_size > MAX_HTTP_SIZE)
 			htpkt_size = MAX_HTTP_SIZE;
-		// Extract HTTP header
+		// Extract HTTP packet
                 if (htpkt_size > 0) {	
 			memset(httpbuf, 0, MAX_HTTP_SIZE);
 			memcpy(httpbuf, packet + ETH_HDR_SIZE + iphdr_size + tcphdr_size, htpkt_size);
+			
+			if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
+				memccpy(buf, httpbuf, '\n', htpkt_size);
+				printf("Request string: %s\n", buf);
+			}
+			printf("Entire HTTP packet:\n");
 			printf("%s\n", httpbuf);
 		}
 		printf("\n");
-
 	}
 	pcap_close(handle);
 	return 0;
