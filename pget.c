@@ -25,8 +25,10 @@ int main() {
 	const u_char* packet;		 // The actual packet
 	struct iphdr* ipheader = NULL;   // Pointer to the IP header
 	struct tcphdr* tcpheader = NULL; // Pointer to the TCP header
+	char* field  = NULL;		 // Pointer to field begin
 	int iphdr_size, packet_size, tcphdr_size, htpkt_size;
 	iphdr_size = packet_size = tcphdr_size = htpkt_size = 0;
+	
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 	memset(httpbuf, 0, MAX_HTTP_SIZE);
@@ -94,11 +96,24 @@ int main() {
                 if (htpkt_size > 0) {	
 			memset(httpbuf, 0, MAX_HTTP_SIZE);
 			memcpy(httpbuf, packet + ETH_HDR_SIZE + iphdr_size + tcphdr_size, htpkt_size);
-			
+			// Request string
 			if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
 				memccpy(buf, httpbuf, '\n', htpkt_size);
-				printf("Request string: %s\n", buf);
+				printf("Request string: %s", buf);
+				memset(buf, 0, MAX_FIELD_SIZE);
 			}
+			// Host
+			if ( (field = strstr(httpbuf, "Host:"))) {
+				memccpy(buf, field, '\n', htpkt_size - (field - httpbuf));
+				printf("%s", buf);
+				memset(buf, 0, MAX_FIELD_SIZE);
+			}
+			// User-Agent
+			if ( (field = strstr(httpbuf, "User-Agent:"))) {
+                                memccpy(buf, field, '\n', htpkt_size - (field - httpbuf));
+                                printf("%s", buf);
+				memset(buf, 0, MAX_FIELD_SIZE);
+                        }
 			printf("Entire HTTP packet:\n");
 			printf("%s\n", httpbuf);
 		}
