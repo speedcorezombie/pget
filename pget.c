@@ -5,17 +5,25 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <mysql.h>
 
 #define MAX_HTTP_SIZE 2048 		 // Max allowed HTTP packet size
-#define MAX_FIELD_SIZE 2048               // Max allowed field size in HTTP header
+#define MAX_FIELD_SIZE 128               // Max allowed field size in HTTP header
+#define MAX_REQ_SIZE 256		 // Max allowed request string size
 #define ETH_HDR_SIZE 14			 // Ethernet header size
+#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
+
+MYSQL* mysql_conn();
 
 int main() {
 
 	char* device;                    // Sniffing device
 	char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
 	char httpbuf[MAX_HTTP_SIZE];     // HTTP packet buffer
-	char buf[MAX_FIELD_SIZE];        // Buffer for extract HTTP headers
+	char request[MAX_REQ_SIZE];      // Buffer for extract HTTP request
+	char host[MAX_FIELD_SIZE];       // Buffer for extract HTTP Host
+	char useragent[MAX_FIELD_SIZE];   // Buffer for extract HTTP User-Agent
+	char query[2048];
 	pcap_t* handle;                  // Session handle
 	struct bpf_program fp;           // The compiled filter expression
 	char filter_exp[] = "port 80";   // The filter expression
@@ -28,11 +36,14 @@ int main() {
 	char* field  = NULL;		 // Pointer to field begin
 	int iphdr_size, packet_size, tcphdr_size, htpkt_size;
 	iphdr_size = packet_size = tcphdr_size = htpkt_size = 0;
-	
+	MYSQL* conn;
+
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 	memset(httpbuf, 0, MAX_HTTP_SIZE);
 	int count;
+
+	conn = mysql_conn();
 
 	device = pcap_lookupdev(errbuf);
 	printf("Device: %s\n", device);
@@ -60,20 +71,24 @@ int main() {
 		if ( (packet = pcap_next(handle, &header)) == NULL) {
         		fprintf(stderr, "ERROR: Error getting the packet\n", errbuf);
 			continue;
-		} else
+		} else {
 			fprintf(stderr, "Packet captured\n");
-		
+			fprintf(stderr, "Timestamp:        %d.%d\n", header.ts.tv_sec, header.ts.tv_usec);
+		}
+			
 		// Extract IP header
 		ipheader = (struct iphdr *)(packet + ETH_HDR_SIZE);
 		iphdr_size = ipheader->ihl * 4;
 		packet_size = ntohs(ipheader->tot_len);
 		printf("IP header lengh:  %d\n", iphdr_size);
 		printf("Packet size:      %d\n", packet_size);
+		printf("TTL:              %d\n", ipheader->ttl);
                 printf("Source IP:        %s\n", inet_ntoa( *(struct in_addr *) &ipheader->saddr));
                 printf("Destination IP:   %s\n", inet_ntoa( *(struct in_addr *) &ipheader->daddr));
 		// Extract TCP header
                 tcpheader = (struct tcphdr *)(packet + ETH_HDR_SIZE + iphdr_size);
 		tcphdr_size = tcpheader->doff * 4;
+		printf("TCP header lengh: %d\n", tcphdr_size);
 		printf("Source port:      %d\n", ntohs(tcpheader->source));
 		printf("Destination port: %d\n", ntohs(tcpheader->dest));
 		printf("Flags:            ");
@@ -84,7 +99,7 @@ int main() {
 		if (tcpheader->fin)
                         printf("FYN ");
 		printf("\n");
-
+		printf("Window:           %d\n", ntohs(tcpheader->window));
 		// Calculate HTTP packet's size 
 		htpkt_size = packet_size - (iphdr_size + tcphdr_size);
 		printf("HTTP packet size: %d\n", htpkt_size);
@@ -98,27 +113,56 @@ int main() {
 			memcpy(httpbuf, packet + ETH_HDR_SIZE + iphdr_size + tcphdr_size, htpkt_size);
 			// Request string
 			if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
-				memccpy(buf, httpbuf, '\n', htpkt_size);
-				printf("Request string: %s", buf);
-				memset(buf, 0, MAX_FIELD_SIZE);
+                                memset(request, 0, MAX_FIELD_SIZE);
+				memccpy(request, httpbuf, '\n', MIN(MAX_REQ_SIZE,htpkt_size));
+				printf("Request string: %s", request);
 			}
 			// Host
 			if ( (field = strstr(httpbuf, "Host:"))) {
-				memccpy(buf, field, '\n', htpkt_size - (field - httpbuf));
-				printf("%s", buf);
-				memset(buf, 0, MAX_FIELD_SIZE);
+                                memset(host, 0, MAX_FIELD_SIZE);
+				memccpy(host, field, '\n', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+				printf("%s", host);
 			}
 			// User-Agent
 			if ( (field = strstr(httpbuf, "User-Agent:"))) {
-                                memccpy(buf, field, '\n', htpkt_size - (field - httpbuf));
-                                printf("%s", buf);
-				memset(buf, 0, MAX_FIELD_SIZE);
+                                memset(useragent, 0, MAX_FIELD_SIZE);
+                                memccpy(useragent, field, '\n', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+                                printf("%s", useragent);
                         }
 			printf("Entire HTTP packet:\n");
 			printf("%s\n", httpbuf);
 		}
 		printf("\n");
+		char* stat = "INSERT INTO header VALUES('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u',"
+						       "'%u', '%u', '%u', '%u', '%u', '%s', '%s', '%s')";
+			
+		snprintf(query, 2048, stat, header.ts.tv_sec, header.ts.tv_usec, iphdr_size, packet_size, ipheader->ttl,
+			ntohl(ipheader->saddr), ntohl(ipheader->daddr), tcphdr_size, ntohs(tcpheader->source),
+			ntohs(tcpheader->dest), tcpheader->syn, tcpheader->ack, tcpheader->fin, tcpheader->window,
+			htpkt_size, request, host, useragent);
+		printf("%s\n", query);
+		mysql_query(conn, query);
 	}
 	pcap_close(handle);
+	mysql_close(conn);
+
 	return 0;
-} 
+}
+
+MYSQL* mysql_conn() {
+	
+	MYSQL* conn;
+        MYSQL_RES* res;
+        MYSQL_ROW row;
+        char* server = "localhost";
+        char* user = "root";
+        char* password = "d00macc3"; /* set me first */
+        char* database = "pget";
+
+	conn = mysql_init(NULL);
+	if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0)) {
+		fprintf(stderr, "%s\n", mysql_error(conn));
+      		return NULL;
+   	}
+	return conn;
+}
