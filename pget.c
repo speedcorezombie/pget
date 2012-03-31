@@ -43,7 +43,7 @@ int main() {
 	memset(httpbuf, 0, MAX_HTTP_SIZE);
 	int count;
 
-	if ( !(conn = mysql_conn()); {
+	if ( !(conn = mysql_conn())) {
 		fprintf(stderr, "Can't connect to MySQL server");
 		exit(1);
 	}
@@ -135,13 +135,13 @@ int main() {
 			// Host
 			if ( (field = strstr(httpbuf, "Host:"))) {
                                 memset(host, 0, MAX_FIELD_SIZE);
-				memccpy(host, field, '\n', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+				memccpy(host, field + 6, '\n', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
 				//printf("%s", host);
 			}
 			// User-Agent
 			if ( (field = strstr(httpbuf, "User-Agent:"))) {
                                 memset(useragent, 0, MAX_FIELD_SIZE);
-                                memccpy(useragent, field, '\n', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+                                memccpy(useragent, field + 12, '\n', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
                                 //printf("%s", useragent);
                         }
 			//printf("Entire HTTP packet:\n");
