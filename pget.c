@@ -134,7 +134,7 @@ int main() {
 			//printf("%s\n", httpbuf);
 		}
 		//printf("\n");
-		char* stat = "INSERT INTO header VALUES('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u',"
+		char* stat = "INSERT INTO headers VALUES('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u',"
 						       "'%u', '%u', '%u', '%u', '%u', '%s', '%s', '%s')";
 			
 		snprintf(query, 2048, stat, header.ts.tv_sec, header.ts.tv_usec, iphdr_size, packet_size, ipheader->ttl,
