@@ -115,19 +115,22 @@ int main() {
 			// Request string
 			if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
                                 memset(request, 0, MAX_FIELD_SIZE);
-				memccpy(request, httpbuf, '\r', MIN(MAX_REQ_SIZE,htpkt_size) - 1);
+				memccpy(request, httpbuf, '\r', MIN(MAX_REQ_SIZE,htpkt_size));
+				request[strlen(request) -1] = 0;
 				//printf("Request string: %s", request);
 			}
 			// Host
 			if ( (field = strstr(httpbuf, "Host:"))) {
                                 memset(host, 0, MAX_FIELD_SIZE);
-				memccpy(host, field + 6, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf) - 1));
+				memccpy(host, field + 6, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+				host[strlen(host) -1] = 0;
 				//printf("%s", host);
 			}
 			// User-Agent
 			if ( (field = strstr(httpbuf, "User-Agent:"))) {
                                 memset(useragent, 0, MAX_FIELD_SIZE);
-                                memccpy(useragent, field + 12, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf) - 1));
+                                memccpy(useragent, field + 12, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+				useragent[strlen(useragent) -1] = 0;
                                 //printf("%s", useragent);
                         }
 			//printf("Entire HTTP packet:\n");
