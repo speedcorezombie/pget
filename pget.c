@@ -95,6 +95,9 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
         // Truncate it, if exceed MAX_HTTP_SIZE
         if (htpkt_size > MAX_HTTP_SIZE)
 	        htpkt_size = MAX_HTTP_SIZE;
+
+	// Append HTTP packet lengh to query
+	inject_value(query, (htpkt_size));
 	
         // Extract HTTP packet
         if (htpkt_size > 0) {
@@ -135,8 +138,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 printf("%s\n", httpbuf);
 		*/
 	} else
-		strcat(query, "', ' ',' ');");
-                
+                strcat(query, " ', ' ', ' ');"); 
 		// Send INSERT query
 		//printf("%s\n", query);
                 mysql_query(conn, query);
