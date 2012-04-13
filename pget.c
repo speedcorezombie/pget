@@ -1,38 +1,166 @@
 #include "pget.h"
 
+void inject_value(char* str, int value) {
+        char  tmpbuf[16];                // Temporary buffer for conversion
+        char  divider[] = "', '";          // Divide value in query
+
+        memset(tmpbuf, 0, 16);
+
+	snprintf(tmpbuf, 16, "%u", value);
+        strcat(str, tmpbuf);        
+        strcat(str, divider);
+}
+
+void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
+
+        char httpbuf[MAX_HTTP_SIZE];     // HTTP packet buffer
+        char request[MAX_REQ_SIZE];      // Buffer for extract HTTP request
+        char host[MAX_FIELD_SIZE];       // Buffer for extract HTTP Host
+        char useragent[MAX_FIELD_SIZE];  // Buffer for extract HTTP User-Agent
+        struct iphdr* ipheader = NULL;   // Pointer to the IP header
+        struct tcphdr* tcpheader = NULL; // Pointer to the TCP header
+        char* field  = NULL;             // Pointer to field begin
+        int iphdr_size, packet_size, tcphdr_size, htpkt_size;
+        iphdr_size = packet_size = tcphdr_size = htpkt_size = 0;
+	memset(httpbuf, 0, MAX_HTTP_SIZE);
+	// Query buffer
+	char query[2048] = "INSERT INTO headers VALUES('";
+                char* stat = "%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u',"
+                                                       "'%u', '%u', '%u', '%u', '%u', '%s', '%s', '%s')";
+	// Print timestamp
+        /*
+        fprintf(stderr, "Packet captured\n");
+        fprintf(stderr, "Timestamp:        %d.%d\n", header->ts->tv_sec, header->ts->tv_usec);
+ 	*/
+	// Append timestamp to query
+	inject_value(query, header->ts.tv_sec);
+	inject_value(query, header->ts.tv_usec);
+
+        // Extract IP header
+        ipheader = (struct iphdr *)(packet + ETH_HDR_SIZE);
+        iphdr_size = ipheader->ihl * 4;
+        packet_size = ntohs(ipheader->tot_len);
+
+        // Print IP Header fields (uncomment for debug)
+	/*
+        printf("IP header lengh:  %d\n", iphdr_size);
+        printf("Packet size:      %d\n", packet_size);
+        printf("TTL:              %d\n", ipheader->ttl);
+        printf("Source IP:        %s\n", inet_ntoa( *(struct in_addr *) &ipheader->saddr));
+        printf("Destination IP:   %s\n", inet_ntoa( *(struct in_addr *) &ipheader->daddr));
+	*/
+
+	// Appent IP Header to query
+        inject_value(query, (int)iphdr_size);
+        inject_value(query, (int)packet_size);
+        inject_value(query, (int)ipheader->ttl);
+        inject_value(query, ntohl(ipheader->saddr));
+        inject_value(query, ntohl(ipheader->daddr));
+
+        // Extract TCP header
+        tcpheader = (struct tcphdr *)(packet + ETH_HDR_SIZE + iphdr_size);
+        tcphdr_size = tcpheader->doff * 4;
+
+        // Print TCP Header fields (uncomment for debug)
+        /*
+        printf("TCP header lengh: %d\n", tcphdr_size);
+        printf("Source port:      %d\n", ntohs(tcpheader->source));
+        printf("Destination port: %d\n", ntohs(tcpheader->dest));
+        printf("Flags:            ");
+        if (tcpheader->syn)
+                printf("SYN ");
+        if (tcpheader->ack)
+                printf("ACK ");
+        if (tcpheader->fin)
+                printf("FYN ");
+        printf("\n");
+        printf("Window:           %d\n", ntohs(tcpheader->window));
+	*/
+
+        // Appent IP Header to query
+        inject_value(query, (int)tcphdr_size);
+        inject_value(query, (int)ntohs(tcpheader->source));
+        inject_value(query, (int)ntohs(tcpheader->dest));
+        inject_value(query, (int)tcpheader->syn);
+        inject_value(query, (int)tcpheader->ack);
+        inject_value(query, (int)tcpheader->fin);
+        inject_value(query, (int)tcpheader->window);
+
+        // Calculate HTTP packet's size 
+        htpkt_size = packet_size - (iphdr_size + tcphdr_size);
+        //printf("HTTP packet size: %d\n", htpkt_size);
+
+        // Truncate it, if exceed MAX_HTTP_SIZE
+        if (htpkt_size > MAX_HTTP_SIZE)
+	        htpkt_size = MAX_HTTP_SIZE;
+	
+        // Extract HTTP packet
+        if (htpkt_size > 0) {
+                memset(httpbuf, 0, MAX_HTTP_SIZE);
+                memcpy(httpbuf, packet + ETH_HDR_SIZE + iphdr_size + tcphdr_size, htpkt_size);
+
+                // Request string
+                if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
+                        memset(request, 0, MAX_FIELD_SIZE);
+                        memccpy(request, httpbuf, '\r', MIN(MAX_REQ_SIZE,htpkt_size));
+                        request[strlen(request) -1] = 0;
+                        //printf("Request string: %s", request);
+			strcat(query, request);
+                        strcat(query, "', '");
+                }
+                // Host
+                if ( (field = strstr(httpbuf, "Host:"))) {
+                        memset(host, 0, MAX_FIELD_SIZE);
+                        memccpy(host, field + 6, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+                        host[strlen(host) -1] = 0;
+                        //printf("%s", host);
+                        strcat(query, host);
+                        strcat(query, "', '");
+
+                }
+		// User-Agent
+                if ( (field = strstr(httpbuf, "User-Agent:"))) {
+                        memset(useragent, 0, MAX_FIELD_SIZE);
+                        memccpy(useragent, field + 12, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
+                        useragent[strlen(useragent) -1] = 0;
+                        //printf("%s", useragent);
+                        strcat(query, useragent);
+                        strcat(query, "');");
+                }
+		// Print HTTP packet
+		/*
+                printf("Entire HTTP packet:\n");
+                printf("%s\n", httpbuf);
+		*/
+	}
+                
+		// Send INSERT query
+		printf("%s\n", query);
+//                mysql_query(conn, query);
+
+}
+
 
 int main() {
 
+        struct pcap_pkthdr header;       // The header that pcap gives us
+        const u_char* packet;            // The actual packet
 	char* device;                    // Sniffing device
 	char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
-	char httpbuf[MAX_HTTP_SIZE];     // HTTP packet buffer
-	char request[MAX_REQ_SIZE];      // Buffer for extract HTTP request
-	char host[MAX_FIELD_SIZE];       // Buffer for extract HTTP Host
-	char useragent[MAX_FIELD_SIZE];   // Buffer for extract HTTP User-Agent
-	char query[2048];
 	pcap_t* handle;                  // Session handle
 	struct bpf_program fp;           // The compiled filter expression
 	char filter_exp[] = "dst port 80";   // The filter expression
 	bpf_u_int32 mask;                // The netmask of our sniffing device
 	bpf_u_int32 net;                 // The IP of our sniffing device
-	struct pcap_pkthdr header;       // The header that pcap gives us
-	const u_char* packet;		 // The actual packet
-	struct iphdr* ipheader = NULL;   // Pointer to the IP header
-	struct tcphdr* tcpheader = NULL; // Pointer to the TCP header
-	char* field  = NULL;		 // Pointer to field begin
-	int iphdr_size, packet_size, tcphdr_size, htpkt_size;
-	iphdr_size = packet_size = tcphdr_size = htpkt_size = 0;
 	MYSQL* conn;
 
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
-	memset(httpbuf, 0, MAX_HTTP_SIZE);
-	int count;
 
-	if ( !(conn = mysql_conn())) {
-		fprintf(stderr, "Can't connect to MySQL server");
-		exit(1);
-	}
+//	if ( !(conn = mysql_conn())) {
+//		fprintf(stderr, "Can't connect to MySQL server");
+//		exit(1);
+//	}
 		
 
 	device = pcap_lookupdev(errbuf);
@@ -55,100 +183,12 @@ int main() {
 		fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
 		exit(1);
 	}
-	count = 100;
-	while (count) {
-		// Try to get packet. If capture fail - try next.
-		if ( (packet = pcap_next(handle, &header)) == NULL) {
-        		fprintf(stderr, "ERROR: Error getting the packet\n", errbuf);
-			continue;
-		} else {
-			// uncomment for debug) <------------------
-			/*
-			fprintf(stderr, "Packet captured\n");
-			fprintf(stderr, "Timestamp:        %d.%d\n", header.ts.tv_sec, header.ts.tv_usec);
-			*/
-		}
 			
-		// Extract IP header
-		ipheader = (struct iphdr *)(packet + ETH_HDR_SIZE);
-		iphdr_size = ipheader->ihl * 4;
-		packet_size = ntohs(ipheader->tot_len);
-		
-		// Print IP Header fields (uncomment for debug) 
-		/*
-		printf("IP header lengh:  %d\n", iphdr_size);
-		printf("Packet size:      %d\n", packet_size);
-		printf("TTL:              %d\n", ipheader->ttl);
-                printf("Source IP:        %s\n", inet_ntoa( *(struct in_addr *) &ipheader->saddr));
-                printf("Destination IP:   %s\n", inet_ntoa( *(struct in_addr *) &ipheader->daddr));
-		*/
-		// Extract TCP header
-                tcpheader = (struct tcphdr *)(packet + ETH_HDR_SIZE + iphdr_size);
-		tcphdr_size = tcpheader->doff * 4;
-		
-		// Print TCP Header fields (uncomment for debug) 
-		/*
-		printf("TCP header lengh: %d\n", tcphdr_size);
-		printf("Source port:      %d\n", ntohs(tcpheader->source));
-		printf("Destination port: %d\n", ntohs(tcpheader->dest));
-		printf("Flags:            ");
-		if (tcpheader->syn)
-			printf("SYN ");
-		if (tcpheader->ack)
-                        printf("ACK ");
-		if (tcpheader->fin)
-                        printf("FYN ");
-		printf("\n");
-		printf("Window:           %d\n", ntohs(tcpheader->window));
-		*/ 
-		// Calculate HTTP packet's size 
-		htpkt_size = packet_size - (iphdr_size + tcphdr_size);
-		//printf("HTTP packet size: %d\n", htpkt_size);
-		
-		// Truncate it, if exceed MAX_HTTP_SIZE
-		if (htpkt_size > MAX_HTTP_SIZE)
-			htpkt_size = MAX_HTTP_SIZE;
-		// Extract HTTP packet
-                if (htpkt_size > 0) {	
-			memset(httpbuf, 0, MAX_HTTP_SIZE);
-			memcpy(httpbuf, packet + ETH_HDR_SIZE + iphdr_size + tcphdr_size, htpkt_size);
-			// Request string
-			if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
-                                memset(request, 0, MAX_FIELD_SIZE);
-				memccpy(request, httpbuf, '\r', MIN(MAX_REQ_SIZE,htpkt_size));
-				request[strlen(request) -1] = 0;
-				//printf("Request string: %s", request);
-			}
-			// Host
-			if ( (field = strstr(httpbuf, "Host:"))) {
-                                memset(host, 0, MAX_FIELD_SIZE);
-				memccpy(host, field + 6, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
-				host[strlen(host) -1] = 0;
-				//printf("%s", host);
-			}
-			// User-Agent
-			if ( (field = strstr(httpbuf, "User-Agent:"))) {
-                                memset(useragent, 0, MAX_FIELD_SIZE);
-                                memccpy(useragent, field + 12, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
-				useragent[strlen(useragent) -1] = 0;
-                                //printf("%s", useragent);
-                        }
-			//printf("Entire HTTP packet:\n");
-			//printf("%s\n", httpbuf);
-		}
-		//printf("\n");
-		char* stat = "INSERT INTO headers VALUES('%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u',"
-						       "'%u', '%u', '%u', '%u', '%u', '%s', '%s', '%s')";
-			
-		snprintf(query, 2048, stat, header.ts.tv_sec, header.ts.tv_usec, iphdr_size, packet_size, ipheader->ttl,
-			ntohl(ipheader->saddr), ntohl(ipheader->daddr), tcphdr_size, ntohs(tcpheader->source),
-			ntohs(tcpheader->dest), tcpheader->syn, tcpheader->ack, tcpheader->fin, tcpheader->window,
-			htpkt_size, request, host, useragent);
-		//printf("%s\n", query);
-		mysql_query(conn, query);
-	}
+	// Capture
+	pcap_loop(handle, 0, pget, NULL);	
+	
 	pcap_close(handle);
-	mysql_close(conn);
+//	mysql_close(conn);
 
 	return 0;
 }
