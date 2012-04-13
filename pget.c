@@ -1,4 +1,6 @@
 #include "pget.h"
+MYSQL* conn;
+
 
 void inject_value(char* str, int value) {
         char  tmpbuf[16];                // Temporary buffer for conversion
@@ -132,12 +134,12 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 printf("Entire HTTP packet:\n");
                 printf("%s\n", httpbuf);
 		*/
-	}
+	} else
+		strcat(query, "', ' ',' ');");
                 
 		// Send INSERT query
-		printf("%s\n", query);
-//                mysql_query(conn, query);
-
+		//printf("%s\n", query);
+                mysql_query(conn, query);
 }
 
 
@@ -152,15 +154,16 @@ int main() {
 	char filter_exp[] = "dst port 80";   // The filter expression
 	bpf_u_int32 mask;                // The netmask of our sniffing device
 	bpf_u_int32 net;                 // The IP of our sniffing device
-	MYSQL* conn;
 
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 
-//	if ( !(conn = mysql_conn())) {
-//		fprintf(stderr, "Can't connect to MySQL server");
-//		exit(1);
-//	}
+	conn = NULL;
+
+	if ( !(conn = mysql_conn())) {
+		fprintf(stderr, "Can't connect to MySQL server");
+		exit(1);
+	}
 		
 
 	device = pcap_lookupdev(errbuf);
@@ -188,25 +191,24 @@ int main() {
 	pcap_loop(handle, 0, pget, NULL);	
 	
 	pcap_close(handle);
-//	mysql_close(conn);
+	mysql_close(conn);
 
 	return 0;
 }
 
 MYSQL* mysql_conn() {
 	
-	MYSQL* conn;
-        MYSQL_RES* res;
-        MYSQL_ROW row;
+	MYSQL* connect = NULL;
         char* server = "localhost";
         char* user = "root";
         char* password = "password";
         char* database = "pget";
 
-	conn = mysql_init(NULL);
-	if (!mysql_real_connect(conn, server, user, password, database, 0, NULL, 0)) {
-		fprintf(stderr, "%s\n", mysql_error(conn));
+	connect = mysql_init(NULL);
+	if (!mysql_real_connect(connect, server, user, password, database, 0, NULL, 0)) {
+		fprintf(stderr, "%s\n", mysql_error(connect));
       		return NULL;
    	}
-	return conn;
+	return connect;
 }
+
