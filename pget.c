@@ -108,7 +108,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 if (strstr(httpbuf, "GET") || strstr(httpbuf, "PUT")) {
                         memset(request, 0, MAX_FIELD_SIZE);
                         memccpy(request, httpbuf, '\r', MIN(MAX_REQ_SIZE,htpkt_size));
-                        request[strlen(request) -1] = 0;
+                        request[strlen(request) - 1] = 0;
                         //printf("Request string: %s", request);
 			strcat(query, request);
                         strcat(query, "', '");
@@ -117,7 +117,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 if ( (field = strstr(httpbuf, "Host:"))) {
                         memset(host, 0, MAX_FIELD_SIZE);
                         memccpy(host, field + 6, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
-                        host[strlen(host) -1] = 0;
+                        host[strlen(host) - 1] = 0;
                         //printf("%s", host);
                         strcat(query, host);
                         strcat(query, "', '");
@@ -127,7 +127,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 if ( (field = strstr(httpbuf, "User-Agent:"))) {
                         memset(useragent, 0, MAX_FIELD_SIZE);
                         memccpy(useragent, field + 12, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
-                        useragent[strlen(useragent) -1] = 0;
+                        useragent[strlen(useragent) - 1] = 0;
                         //printf("%s", useragent);
                         strcat(query, useragent);
                         strcat(query, "');");
@@ -138,7 +138,8 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 printf("%s\n", httpbuf);
 		*/
 	} else
-                strcat(query, " ', ' ', ' ');"); 
+		query[strlen(query) - 1] = 0;
+                strcat(query, "NULL, NULL, NULL);"); 
 		// Send INSERT query
 		//printf("%s\n", query);
                 mysql_query(conn, query);
