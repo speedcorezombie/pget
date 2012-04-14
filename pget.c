@@ -153,7 +153,7 @@ int main() {
 	char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
 	pcap_t* handle;                  // Session handle
 	struct bpf_program fp;           // The compiled filter expression
-	char filter_exp[] = "dst port 80";   // The filter expression
+	char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
 	bpf_u_int32 mask;                // The netmask of our sniffing device
 	bpf_u_int32 net;                 // The IP of our sniffing device
 
