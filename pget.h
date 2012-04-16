@@ -1,4 +1,5 @@
-#include <pcap/pcap.h>
+// In CentOS <pcap.h>, in Fedora <pcap/pcap.h>
+#include <pcap.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <arpa/inet.h>
