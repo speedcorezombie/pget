@@ -137,12 +137,12 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 printf("Entire HTTP packet:\n");
                 printf("%s\n", httpbuf);
 		*/
-	} else
+	} else {
 		query[strlen(query) - 1] = 0;
                 strcat(query, "NULL, NULL, NULL);"); 
-		// Send INSERT query
-		//printf("%s\n", query);
-                mysql_query(conn, query);
+	// Send INSERT query
+	//printf("%s\n", query);
+        mysql_query(conn, query);
 }
 
 
@@ -202,7 +202,7 @@ int main() {
 MYSQL* mysql_conn() {
 	
 	MYSQL* connect = NULL;
-        char* server = "localhost";
+        char* server = "speedcorezombie.net";
         char* user = "root";
         char* password = "password";
         char* database = "pget";
