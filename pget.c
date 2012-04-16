@@ -178,7 +178,7 @@ int main() {
 		mask = 0;
 	}
 
-	handle = pcap_open_live(device, 2048, 0, 512, errbuf);
+	handle = pcap_open_live(device, 2048, 0, 1, errbuf);
 	// Compile filter for capture
 	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
 		fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
