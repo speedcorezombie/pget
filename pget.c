@@ -63,6 +63,9 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
         tcpheader = (struct tcphdr *)(packet + ETH_HDR_SIZE + iphdr_size);
         tcphdr_size = tcpheader->doff * 4;
 
+        // Calculate HTTP packet's size
+        htpkt_size = packet_size - (iphdr_size + tcphdr_size);
+
         // Print TCP Header fields (uncomment for debug)
         /*
         printf("TCP header lengh: %d\n", tcphdr_size);
@@ -88,13 +91,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
         inject_value(query, (int)tcpheader->fin);
         inject_value(query, (int)tcpheader->window);
 
-        // Calculate HTTP packet's size 
-        htpkt_size = packet_size - (iphdr_size + tcphdr_size);
         //printf("HTTP packet size: %d\n", htpkt_size);
-
-        // Truncate it, if exceed MAX_HTTP_SIZE
-        if (htpkt_size > MAX_HTTP_SIZE)
-	        htpkt_size = MAX_HTTP_SIZE;
 
 	// Append HTTP packet lengh to query
 	inject_value(query, (htpkt_size));
@@ -140,6 +137,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 	} else {
 		query[strlen(query) - 1] = 0;
                 strcat(query, "NULL, NULL, NULL);"); 
+	}
 	// Send INSERT query
 	//printf("%s\n", query);
         mysql_query(conn, query);
