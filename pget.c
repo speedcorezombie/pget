@@ -1,6 +1,12 @@
 #include "pget.h"
-MYSQL* conn;
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
+MYSQL* conn;
+int fd;
+char* data;
 
 void inject_value(char* str, int value) {
         char  tmpbuf[16];                // Temporary buffer for conversion
@@ -27,8 +33,6 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 	memset(httpbuf, 0, MAX_HTTP_SIZE);
 	// Query buffer
 	char query[2048] = "INSERT INTO headers VALUES('";
-                char* stat = "%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u', '%u',"
-                                                       "'%u', '%u', '%u', '%u', '%u', '%s', '%s', '%s')";
 	// Print timestamp
         /*
         fprintf(stderr, "Packet captured\n");
@@ -140,7 +144,10 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 	}
 	// Send INSERT query
 	//printf("%s\n", query);
-        mysql_query(conn, query);
+	strcat(data, query);
+	strcat(data, "\n");
+	
+//        mysql_query(conn, query);
 }
 
 
@@ -155,18 +162,24 @@ int main() {
 	char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
 	bpf_u_int32 mask;                // The netmask of our sniffing device
 	bpf_u_int32 net;                 // The IP of our sniffing device
-
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
-
 	conn = NULL;
+	int pagesize = getpagesize();
 
+	// MYSQL connect
 	if ( !(conn = mysql_conn())) {
 		fprintf(stderr, "Can't connect to MySQL server");
 		exit(1);
 	}
-		
 
+	if ( (fd = open("capturefile", O_RDWR)) < 0) {
+		fprintf(stderr, "Can't open output file");
+		exit(1);
+	}	
+	data = mmap((caddr_t)0, 33554432, PROT_READ|PROT_WRITE, MAP_SHARED, fd, pagesize);
+			
+	// Get device for capture
 	device = pcap_lookupdev(errbuf);
 	printf("Device: %s\n", device);
 	printf("filter: %s\n", filter_exp);
@@ -176,7 +189,7 @@ int main() {
 		mask = 0;
 	}
 
-	handle = pcap_open_live(device, 2048, 0, 1, errbuf);
+	handle = pcap_open_live(device, 1514, 0, 1, errbuf);
 	// Compile filter for capture
 	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
 		fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
