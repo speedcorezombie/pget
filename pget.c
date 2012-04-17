@@ -5,7 +5,6 @@
 #include <fcntl.h>
 
 MYSQL* conn;
-int fd;
 char* data;
 
 void inject_value(char* str, int value) {
@@ -159,13 +158,15 @@ int main() {
 	char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
 	pcap_t* handle;                  // Session handle
 	struct bpf_program fp;           // The compiled filter expression
-	char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
+	char filter_exp[] = "dst port 80";
+//	char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
 	bpf_u_int32 mask;                // The netmask of our sniffing device
 	bpf_u_int32 net;                 // The IP of our sniffing device
 	device = NULL;
 	memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 	conn = NULL;
-	int pagesize = getpagesize();
+	int fd;
+	struct stat sbuf;
 
 	// MYSQL connect
 	if ( !(conn = mysql_conn())) {
@@ -177,7 +178,16 @@ int main() {
 		fprintf(stderr, "Can't open output file");
 		exit(1);
 	}	
-	data = mmap((caddr_t)0, 33554432, PROT_READ|PROT_WRITE, MAP_SHARED, fd, pagesize);
+	data = mmap((caddr_t)0, 33554432, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+        if (stat("capturefile", &sbuf) <0) {
+                fprintf(stderr, "Can't stat");
+                exit(1);
+        }
+        if (data == (caddr_t)(-1)) {
+                fprintf(stderr, "Can't mmap");
+                exit(1);
+        }
+
 			
 	// Get device for capture
 	device = pcap_lookupdev(errbuf);
