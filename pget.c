@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define FILE_SIZE 33554432
 MYSQL* conn;
 char* data;
 
@@ -167,6 +168,7 @@ int main() {
 	conn = NULL;
 	int fd;
 	struct stat sbuf;
+	pid_t pid;
 
 	// MYSQL connect
 	if ( !(conn = mysql_conn())) {
@@ -177,8 +179,9 @@ int main() {
 	if ( (fd = open("capturefile", O_RDWR)) < 0) {
 		fprintf(stderr, "Can't open output file");
 		exit(1);
-	}	
-	data = mmap((caddr_t)0, 33554432, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+	}
+	ftruncate(fd, FILE_SIZE);
+	data = mmap((caddr_t)0, FILE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
         if (stat("capturefile", &sbuf) <0) {
                 fprintf(stderr, "Can't stat");
                 exit(1);
@@ -210,9 +213,15 @@ int main() {
 		fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
 		exit(1);
 	}
-			
-	// Capture
-	pcap_loop(handle, 0, pget, NULL);	
+	if ( (pid = fork()) < 0) {
+		fprintf(stderr, "Can't fork");
+		exit(1);
+	} else if (pid == 0) {		
+		// Capture
+		pcap_loop(handle, 0, pget, NULL);	
+	} else {
+		while(1);
+	}
 	
 	pcap_close(handle);
 	mysql_close(conn);
