@@ -3,6 +3,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/file.h>
 
 #define FILE_SIZE 33554432
 MYSQL* conn;
@@ -220,7 +221,16 @@ int main() {
 		// Capture
 		pcap_loop(handle, 0, pget, NULL);	
 	} else {
-		while(1);
+                while(1) {
+                        flock(fd, LOCK_EX);
+                        printf("sleep...\n");
+                        sleep(10);
+                        printf("truncate!\n");
+                        ftruncate(fd, 0);
+                        ftruncate(fd, FILE_SIZE);
+                        flock(fd, LOCK_UN);
+                }
+
 	}
 	
 	pcap_close(handle);
