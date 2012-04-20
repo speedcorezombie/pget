@@ -6,7 +6,7 @@
 #include <sys/file.h>
 
 #include <pthread.h>
-#define FILE_SIZE 3355443
+#define FILE_SIZE 33554430
 
 void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
 
@@ -43,35 +43,39 @@ void* query_thread() {
         mirror = malloc(FILE_SIZE);
         memset(mirror, 0, FILE_SIZE);
         while (1) {
-                sleep(20);
-                //************************************
-                printf("query_thread: wait for critical\n");
+                sleep(1);
+                // printf("query_thread: wait for critical\n");
                 pthread_mutex_lock(&mutex);
-                printf("query_thread: in critical\n");
-                printf("query_thread: let strncpy to 0x%x from 0x%x\n", mirror, data);
-                strncpy(mirror, data, FILE_SIZE);
-                //data[0] = 0;
-                memset(data, 0, FILE_SIZE);
+                // printf("query_thread: in critical\n");
+		if (strlen(data))
+			strcat(mirror, "INSERT INTO headers VALUES");
+		
+                strcat(mirror, data);
+                data[0] = 0;
                 pthread_mutex_unlock(&mutex);
-                printf("query_thread: out critical\n");
-                //************************************
-
+                //printf("query_thread: out critical\n");
+		mirror[strlen(mirror) - 2] = ';';
+		//printf("%s\n", mirror);
                 if (strlen(mirror) > 0) {
-                         mysql_query(conn, mirror);
-                         do {   
-                               res = mysql_store_result(conn);
-                               if (res)
-                                        mysql_free_result(res);
-                                status = mysql_next_result(conn);
-                         } while (status == 0);
-                         memset(mirror, 0, FILE_SIZE);
-                }
+			//printf("try to query %d bytes\n", strlen(mirror));
+                        status = mysql_query(conn, mirror);
+			//printf("%s\n",mysql_error(conn));
+
+                	do {   
+                        	res = mysql_store_result(conn);
+                        	if (res)
+                                	mysql_free_result(res);
+                        	status = mysql_next_result(conn);
+                	} while (status == 0);
+			mirror[0] = 0;
+                } 
         }
+	mysql_close(conn);
 }
 
 
+// Capture thread
 void* pcap_thread() {
-        printf("pcap_thread start");
         struct pcap_pkthdr header;       // The header that pcap gives us
         const u_char* packet;            // The actual packet
         char* device;                    // Sniffing device
@@ -85,7 +89,7 @@ void* pcap_thread() {
         device = NULL;
         memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 
-                // Get device for capture
+        // Get device for capture
         device = pcap_lookupdev(errbuf);
         printf("Device: %s\n", device);
         printf("filter: %s\n", filter_exp);
@@ -106,12 +110,13 @@ void* pcap_thread() {
                 fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
                 exit(1);
         }
+	// Capture loop
         pcap_loop(handle, 0, pget, NULL);
 
         pcap_close(handle);
 }
 
-
+// Capture callout function
 void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 
         char httpbuf[MAX_HTTP_SIZE];     // HTTP packet buffer
@@ -125,7 +130,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
         iphdr_size = packet_size = tcphdr_size = htpkt_size = 0;
         memset(httpbuf, 0, MAX_HTTP_SIZE);
         // Query buffer
-        char query[2048] = "INSERT INTO headers VALUES('";
+	char query[2048] = "('";
         // Print timestamp
         /*
         fprintf(stderr, "Packet captured\n");
@@ -192,7 +197,6 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 
         // Append HTTP packet lengh to query
         inject_value(query, (htpkt_size));
-
         // Extract HTTP packet
         if (htpkt_size > 0) {
                 memset(httpbuf, 0, MAX_HTTP_SIZE);
@@ -206,7 +210,11 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                         //printf("Request string: %s", request);
                         strcat(query, request);
                         strcat(query, "', '");
-                }
+
+                } else {
+			query[strlen(query) - 1] =  0;
+			strcat(query, " NULL, '");
+		}
                 // Host
                 if ( (field = strstr(httpbuf, "Host:"))) {
                         memset(host, 0, MAX_FIELD_SIZE);
@@ -216,16 +224,23 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                         strcat(query, host);
                         strcat(query, "', '");
 
-                }
-                // User-Agent
+                } else {
+                        query[strlen(query) - 1] =  0;
+                        strcat(query, " NULL, '");
+		}
+		// User-Agent
                 if ( (field = strstr(httpbuf, "User-Agent:"))) {
                         memset(useragent, 0, MAX_FIELD_SIZE);
                         memccpy(useragent, field + 12, '\r', MIN(MAX_FIELD_SIZE,htpkt_size - (field - httpbuf)));
                         useragent[strlen(useragent) - 1] = 0;
                         //printf("%s", useragent);
                         strcat(query, useragent);
-                        strcat(query, "');");
-                }
+                        strcat(query, "'), ");
+
+                } else { 
+                        query[strlen(query) - 1] =  0;
+                        strcat(query, " NULL), ");
+		}
                 // Print HTTP packet
                 /*
                 printf("Entire HTTP packet:\n");
@@ -233,34 +248,34 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
                 */
         } else {
                 query[strlen(query) - 1] = 0;
-                strcat(query, "NULL, NULL, NULL);"); 
+                strcat(query, " NULL, NULL, NULL),"); 
         }
-        // Send INSERT query
-        //************************************
-        printf("pcap_thread: wait for critical\n");
+
+	// Enter in critical section
         pthread_mutex_lock(&mutex);
-        printf("pcap_thread: in critical\n");
+	// Add value in query
         strcat(data, query);
         strcat(data, "\n");
         pthread_mutex_unlock(&mutex);
-        printf("pcap_thread: out critical\n");
-        //************************************
+	// Leave critical section
 }
 
-
+// Entering point
 int main() {
         pthread_t pcthread, qthread;
         data =  mmap(NULL, FILE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
         memset(data, 0, FILE_SIZE);
         int pc_ret, q_ret;
 
+	// Thread creating
+	// Capture thread 
         pc_ret = pthread_create(&pcthread, NULL, pcap_thread, NULL);
+	// Query thread
         q_ret  = pthread_create(&qthread, NULL, query_thread, NULL);
         
+	// Wait for both thread in end
         pthread_join(pcthread, NULL);
         pthread_join(qthread, NULL);
-
-        mysql_close(conn);
 
         return 0;
 }
