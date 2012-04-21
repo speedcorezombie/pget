@@ -1,21 +1,6 @@
 #include "pget.h"
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/file.h>
 
-#include <pthread.h>
-#define FILE_SIZE 33554430
-
-void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet);
-
-MYSQL* conn;
-MYSQL_RES *res;
-char* data;
 pthread_mutex_t mutex  = PTHREAD_MUTEX_INITIALIZER;
-
-
 
 void inject_value(char* str, int value) {
         char  tmpbuf[16];                // Temporary buffer for conversion
@@ -82,13 +67,15 @@ void* pcap_thread() {
         char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
         pcap_t* handle;                  // Session handle
         struct bpf_program fp;           // The compiled filter expression
-        char filter_exp[] = "dst port 80";
-//      char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
+//        char filter_exp[] = "dst port 80";
+        char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
         bpf_u_int32 mask;                // The netmask of our sniffing device
         bpf_u_int32 net;                 // The IP of our sniffing device
         device = NULL;
         memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 
+	data =  mmap(NULL, FILE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+        memset(data, 0, FILE_SIZE);
         // Get device for capture
         device = pcap_lookupdev(errbuf);
         printf("Device: %s\n", device);
@@ -126,11 +113,14 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
         struct iphdr* ipheader = NULL;   // Pointer to the IP header
         struct tcphdr* tcpheader = NULL; // Pointer to the TCP header
         char* field  = NULL;             // Pointer to field begin
-        int iphdr_size, packet_size, tcphdr_size, htpkt_size;
-        iphdr_size = packet_size = tcphdr_size = htpkt_size = 0;
+        int iphdr_size = 0;		 // IP header size
+	int packet_size = 0;		 // Packet size
+        int tcphdr_size = 0;		 // TCP header size
+	int htpkt_size = 0;		 // HTTP packet size
+	char query[QUERY_SIZE] = "('";   // Query buffer
+
+	// HTTP buffer init
         memset(httpbuf, 0, MAX_HTTP_SIZE);
-        // Query buffer
-	char query[2048] = "('";
         // Print timestamp
         /*
         fprintf(stderr, "Packet captured\n");
@@ -263,8 +253,6 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 // Entering point
 int main() {
         pthread_t pcthread, qthread;
-        data =  mmap(NULL, FILE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
-        memset(data, 0, FILE_SIZE);
         int pc_ret, q_ret;
 
 	// Thread creating
@@ -273,7 +261,7 @@ int main() {
 	// Query thread
         q_ret  = pthread_create(&qthread, NULL, query_thread, NULL);
         
-	// Wait for both thread in end
+	// Wait for both thread return
         pthread_join(pcthread, NULL);
         pthread_join(qthread, NULL);
 
