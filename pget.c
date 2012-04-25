@@ -1,4 +1,8 @@
 #include "pget.h"
+#include <syslog.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/stat.h>
 
 pthread_mutex_t mutex  = PTHREAD_MUTEX_INITIALIZER;
 
@@ -14,7 +18,8 @@ void inject_value(char* str, int value) {
 }
 
 void* query_thread() {
-        printf("query_thread start\n");
+	syslog(LOG_WARNING, "Query thread start");
+
         conn = NULL;
         int status = 0;
         char* mirror;
@@ -61,6 +66,8 @@ void* query_thread() {
 
 // Capture thread
 void* pcap_thread() {
+	syslog(LOG_WARNING, "Pcap thread start");
+
         struct pcap_pkthdr header;       // The header that pcap gives us
         const u_char* packet;            // The actual packet
         char* device;                    // Sniffing device
@@ -78,8 +85,11 @@ void* pcap_thread() {
         memset(data, 0, FILE_SIZE);
         // Get device for capture
         device = pcap_lookupdev(errbuf);
-        printf("Device: %s\n", device);
-        printf("filter: %s\n", filter_exp);
+//        printf("Device: %s\n", device);
+        syslog(LOG_WARNING, "Device: %s", device);
+//        printf("filter: %s\n", filter_exp);
+        syslog(LOG_WARNING, "filter: %s", filter_exp);
+
         if (pcap_lookupnet(device, &net, &mask, errbuf) == -1) {
                 fprintf(stderr, "Can't get netmask for device %s\n", device);
                 net = 0;
@@ -254,7 +264,40 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 int main() {
         pthread_t pcthread, qthread;
         int pc_ret, q_ret;
+	pid_t pid, sid;
+        syslog(LOG_WARNING, "Pget started");
+	// Fork children       
+	pid = fork();
+	if (pid < 0) {
+		printf("fork fail\n");
+ 		exit(EXIT_FAILURE);
+	}
+	// 
+	if (pid > 0)
+		exit(EXIT_SUCCESS);
 
+		
+	syslog(LOG_WARNING, "Parent exit, child continue");
+	// Set umask	
+	umask(0);
+  	// Set sid
+	sid = setsid();
+	if (sid < 0) {
+		syslog(LOG_WARNING, "sid fail");
+		exit(EXIT_FAILURE);
+	}
+
+	if ((chdir("/")) < 0) {
+		syslog(LOG_WARNING, "chdir fail");
+		exit(EXIT_FAILURE);
+	}
+
+	// Close standart input/output
+	close(0);
+	close(1);
+	close(2);
+
+	syslog(LOG_WARNING, "Pget daemonized");
 	// Thread creating
 	// Capture thread 
         pc_ret = pthread_create(&pcthread, NULL, pcap_thread, NULL);
@@ -273,7 +316,7 @@ MYSQL* mysql_conn() {
         MYSQL* connect = NULL;
         char* server = "speedcorezombie.net";
         char* user = "root";
-        char* password = "password";
+        char* password = "yeyzfz20";
         char* database = "pget";
 
         connect = mysql_init(NULL);
