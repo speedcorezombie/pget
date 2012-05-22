@@ -37,11 +37,11 @@ void* query_thread() {
                 // printf("query_thread: wait for critical\n");
                 pthread_mutex_lock(&mutex);
                 // printf("query_thread: in critical\n");
-		if (strlen(data))
+		if (strlen(data)) {
 			strcat(mirror, "INSERT INTO headers VALUES");
-		
-                strcat(mirror, data);
-                data[0] = 0;
+                	strcat(mirror, data);
+                	data[0] = 0;
+		}	
                 pthread_mutex_unlock(&mutex);
                 //printf("query_thread: out critical\n");
 		mirror[strlen(mirror) - 2] = ';';
@@ -184,7 +184,7 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
         printf("Window:           %d\n", ntohs(tcpheader->window));
         */
 
-        // Appent IP Header to query
+        // Appent TCP Header to query
         inject_value(query, (int)tcphdr_size);
         inject_value(query, (int)ntohs(tcpheader->source));
         inject_value(query, (int)ntohs(tcpheader->dest));
