@@ -316,7 +316,7 @@ MYSQL* mysql_conn() {
         MYSQL* connect = NULL;
         char* server = "speedcorezombie.net";
         char* user = "root";
-        char* password = "yeyzfz20";
+        char* password = "password";
         char* database = "pget";
 
         connect = mysql_init(NULL);
