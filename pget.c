@@ -1,11 +1,36 @@
 #include "pget.h"
-#include <syslog.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <sys/stat.h>
 
 pthread_mutex_t mutex  = PTHREAD_MUTEX_INITIALIZER;
+int pcap_work = 1;		 // Query processing flag
+pcap_t* handle;			 // Session handle
+char* device;                    // Sniffing device
+char* filter_exp;		 // Filter expression
 
+// Signal handler
+void signal_handler(int sig) {
+ 
+    switch (sig) {
+        case SIGHUP:
+            syslog(LOG_WARNING, "Received SIGHUP signal.");
+            break;
+
+        case SIGTERM:
+            syslog(LOG_WARNING, "Received SIGTERM signal.");
+	    syslog(LOG_WARNING, "Exit pcat_thread..");
+	    pcap_breakloop(handle);
+            syslog(LOG_WARNING, "Pcap_thread was end.");
+	    syslog(LOG_WARNING, "Exit query_thread..");
+            pcap_work = 0;
+	    syslog(LOG_WARNING, "Query_thread was killed.");
+            break;
+
+        default:
+            syslog(LOG_WARNING, "Unhandled signal (%d) %s", strsignal(sig));
+            break;
+    }
+}
+
+// Inject value and divider
 void inject_value(char* str, int value) {
         char  tmpbuf[16];                // Temporary buffer for conversion
         char  divider[] = "', '";          // Divide value in query
@@ -17,9 +42,9 @@ void inject_value(char* str, int value) {
         strcat(str, divider);
 }
 
+// Query thread
 void* query_thread() {
 	syslog(LOG_WARNING, "Query thread start");
-
         conn = NULL;
         int status = 0;
         char* mirror;
@@ -32,7 +57,7 @@ void* query_thread() {
         
         mirror = malloc(FILE_SIZE);
         memset(mirror, 0, FILE_SIZE);
-        while (1) {
+        while (pcap_work) {
                 sleep(1);
                 // printf("query_thread: wait for critical\n");
                 pthread_mutex_lock(&mutex);
@@ -61,6 +86,8 @@ void* query_thread() {
                 } 
         }
 	mysql_close(conn);
+        free(mirror);
+	syslog(LOG_WARNING, "Query_thread exited");
 }
 
 
@@ -70,21 +97,20 @@ void* pcap_thread() {
 
         struct pcap_pkthdr header;       // The header that pcap gives us
         const u_char* packet;            // The actual packet
-        char* device;                    // Sniffing device
+//        char* device;                    // Sniffing device
         char errbuf[PCAP_ERRBUF_SIZE];   // Error message buffer
-        pcap_t* handle;                  // Session handle
         struct bpf_program fp;           // The compiled filter expression
-//        char filter_exp[] = "dst port 80";
-        char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
+//        char filter_exp[] = "dst net 188.93.212.0/24 and not src net 188.93.208.0/21 and dst port 80";   // The filter expression
         bpf_u_int32 mask;                // The netmask of our sniffing device
         bpf_u_int32 net;                 // The IP of our sniffing device
-        device = NULL;
+//        device = NULL;
         memset(errbuf, 0, PCAP_ERRBUF_SIZE);
 
 	data =  mmap(NULL, FILE_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
         memset(data, 0, FILE_SIZE);
+
         // Get device for capture
-        device = pcap_lookupdev(errbuf);
+//        device = pcap_lookupdev(errbuf);
 //        printf("Device: %s\n", device);
         syslog(LOG_WARNING, "Device: %s", device);
 //        printf("filter: %s\n", filter_exp);
@@ -99,7 +125,7 @@ void* pcap_thread() {
         handle = pcap_open_live(device, 1514, 0, 1, errbuf);
         // Compile filter for capture
         if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
-                fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+                syslog(LOG_WARNING, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
                 exit(1);
         }
         // Apply compiled filter
@@ -111,6 +137,8 @@ void* pcap_thread() {
         pcap_loop(handle, 0, pget, NULL);
 
         pcap_close(handle);
+	close(data);
+        syslog(LOG_WARNING, "Pcap_thread exited");
 }
 
 // Capture callout function
@@ -261,21 +289,33 @@ void pget(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) 
 }
 
 // Entering point
-int main() {
-        pthread_t pcthread, qthread;
+int main(int argc, char *argv[]) {
+
+	pthread_t pcthread, qthread;
         int pc_ret, q_ret;
 	pid_t pid, sid;
+	int fd;
+	char* filename = "/var/run/pget.pid";
+	char* pid_buf;
+	char* optstr = "d:n:x:";
+	int opt = 0;
+	char* net;
+	char* excl;
+	int filter_size = 0;
+
+        signal(SIGHUP, signal_handler);
+        signal(SIGTERM, signal_handler);
+
         syslog(LOG_WARNING, "Pget started");
+
 	// Fork children       
 	pid = fork();
 	if (pid < 0) {
-		printf("fork fail\n");
- 		exit(EXIT_FAILURE);
+		syslog(LOG_WARNING, "Fork fail");
+ 		exit(1);
 	}
-	// 
 	if (pid > 0)
-		exit(EXIT_SUCCESS);
-
+		exit(0);
 		
 	syslog(LOG_WARNING, "Parent exit, child continue");
 	// Set umask	
@@ -283,13 +323,13 @@ int main() {
   	// Set sid
 	sid = setsid();
 	if (sid < 0) {
-		syslog(LOG_WARNING, "sid fail");
-		exit(EXIT_FAILURE);
+		syslog(LOG_WARNING, "SID fail");
+		exit(1);
 	}
 
 	if ((chdir("/")) < 0) {
-		syslog(LOG_WARNING, "chdir fail");
-		exit(EXIT_FAILURE);
+		syslog(LOG_WARNING, "Chdir fail");
+		exit(1);
 	}
 
 	// Close standart input/output
@@ -297,7 +337,53 @@ int main() {
 	close(1);
 	close(2);
 
+	// Pidfile creating
+	pid_buf = malloc(16);
+	memset(pid_buf, 0, 16);
+	if ( (fd = open(filename, O_CREAT|O_RDWR|O_EXCL)) != -1) {
+		snprintf(pid_buf, 16, "%d", getpid());
+		write(fd, pid_buf, strlen(pid_buf));
+		close(fd);
+	} else {
+		syslog(LOG_WARNING, "PID fail");
+		exit(1);
+	}	
+
 	syslog(LOG_WARNING, "Pget daemonized");
+
+	// Arguments parsing
+
+	while ( (opt = getopt(argc, argv, optstr)) != -1) {
+		switch (opt) {
+			case 'd':
+				device = malloc(strlen(optarg) + 1);
+				memset(device, 0, strlen(optarg) + 1);
+				strncpy(device, optarg, strlen(optarg));
+				break;
+
+                        case 'n':
+                                net = malloc(strlen(optarg) + 1);
+				memset(net, 0, strlen(optarg) + 1);
+                                strncpy(net, optarg, strlen(optarg));
+                                break;
+
+                        case 'x':
+                                excl = malloc(strlen(optarg) + 1);
+				memset(excl, 0, strlen(optarg) + 1);
+                                strncpy(excl, optarg, strlen(optarg));
+                                break;
+		}
+	}
+	syslog(LOG_WARNING, "dst net %s and not src net %s and dst port 80", net, excl);
+
+	// Writing filter
+	filter_size = 41 + strlen(net) + strlen(excl);
+	filter_exp = malloc(filter_size + 1);
+	memset(filter_exp, 0, filter_size);
+	snprintf(filter_exp, filter_size, "dst net %s and not src net %s and dst port 80", net, excl);
+	free(net);   
+        free(excl);
+
 	// Thread creating
 	// Capture thread 
         pc_ret = pthread_create(&pcthread, NULL, pcap_thread, NULL);
@@ -307,7 +393,12 @@ int main() {
 	// Wait for both thread return
         pthread_join(pcthread, NULL);
         pthread_join(qthread, NULL);
+	
+	free(filter_exp);
+	free(device);
 
+        syslog(LOG_WARNING, "Pget exited");
+	remove(filename);
         return 0;
 }
 
